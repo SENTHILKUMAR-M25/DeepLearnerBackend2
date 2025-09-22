@@ -6,9 +6,11 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const nodemailer = require("nodemailer");
+const { Resend } = require("resend");
 
 const app = express();
 require("dotenv").config();
+const resend = new Resend(process.env.RESEND_API_KEY);
 
 // ------------------ CORS ------------------
 app.use(
@@ -69,19 +71,16 @@ try {
 }
 
 async function sendMail(to, subject, html) {
-  if (!transporter) {
-    console.warn(`⚠️ Skipping email to ${to} - transporter not configured`);
-    return;
-  }
   try {
-    await transporter.sendMail({
-      from: `"Deep Learner Academy"<${process.env.EMAIL_USER}>`,
+    await resend.emails.send({
+      from: "Deep Learner Academy <deeplearneracademy@gmail.com>", // 👈 use your verified sender
       to,
       subject,
       html,
     });
+    console.log(`✅ Email sent to ${to} via Resend`);
   } catch (err) {
-    console.error(`⚠️ Failed to send email to ${to}:`, err.message);
+    console.error("❌ Resend email error:", err);
   }
 }
 
