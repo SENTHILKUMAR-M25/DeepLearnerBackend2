@@ -1,28 +1,19 @@
 const express = require("express");
 const mysql = require("mysql2/promise");
 const cors = require("cors");
-const bodyParser = require("body-parser");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const nodemailer = require("nodemailer");
-const { Resend } = require("resend");
+const dotenv = require("dotenv");
+
+dotenv.config();
 
 const app = express();
-require("dotenv").config();
-const resend = new Resend(process.env.RESEND_API_KEY);
+app.use(express.json());
+app.use(cors({ origin: "*", methods: ["GET", "POST", "PUT", "DELETE"] }));
 
-// ------------------ CORS ------------------
-app.use(
-  cors({
-    origin: "*",
-    methods: ["GET", "POST", "PUT", "DELETE"],
-  })
-);
-
-app.use(bodyParser.json());
-
-// ------------------ UPLOADS ------------------
+// ---------------- UPLOADS ----------------
 const UPLOADS_DIR = path.join(__dirname, "uploads");
 if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 app.use("/uploads", express.static(UPLOADS_DIR));
@@ -31,6 +22,7 @@ const storage = multer.diskStorage({
   destination: (req, file, cb) => cb(null, UPLOADS_DIR),
   filename: (req, file, cb) => cb(null, Date.now() + path.extname(file.originalname)),
 });
+
 const upload = multer({
   storage,
   fileFilter: (req, file, cb) => {
@@ -40,7 +32,7 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 },
 });
 
-// ------------------ MYSQL ------------------
+// ---------------- MYSQL ----------------
 const db = mysql.createPool({
   host: process.env.DB_HOST,
   port: process.env.DB_PORT,
@@ -52,38 +44,31 @@ const db = mysql.createPool({
 });
 
 db.getConnection()
-  .then(() => console.log("✅ MySQL Connected..."))
-  .catch((err) => console.error("❌ MySQL Connection Error:", err));
+  .then(() => console.log("✅ MySQL connected"))
+  .catch((err) => console.error("❌ MySQL connection error:", err));
 
-// ------------------ EMAIL ------------------
-let transporter = null;
-
-try {
+// ---------------- EMAIL ----------------
+let transporter;
+if (process.env.NODE_ENV === "production") {
+  // Production → Resend SMTP
   transporter = nodemailer.createTransport({
-    service: process.env.EMAIL_SERVICE,
+    host: "smtp.resend.com",
+    port: 587,
+    auth: {
+      user: "apikey",
+      pass: process.env.RESEND_API_KEY,
+    },
+  });
+} else {
+  // Development → Gmail
+  transporter = nodemailer.createTransport({
+    service: "gmail",
     auth: {
       user: process.env.EMAIL_USER,
       pass: process.env.EMAIL_PASS,
     },
   });
-} catch (err) {
-  console.warn("⚠️ Email transporter not configured properly:", err.message);
 }
-
-async function sendMail(to, subject, html) {
-  try {
-    await resend.emails.send({
-      from: "Deep Learner Academy <deeplearneracademy@gmail.com>", // 👈 use your verified sender
-      to,
-      subject,
-      html,
-    });
-    console.log(`✅ Email sent to ${to} via Resend`);
-  } catch (err) {
-    console.error("❌ Resend email error:", err);
-  }
-}
-
 // ------------------ COURSES ------------------
 app.get("/api/courses", async (req, res) => {
   try {
