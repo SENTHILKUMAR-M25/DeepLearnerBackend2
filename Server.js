@@ -1,3 +1,4 @@
+// (full file with sendMail integrated)
 const express = require("express");
 const mysql = require("mysql2/promise");
 const cors = require("cors");
@@ -60,7 +61,7 @@ if (process.env.NODE_ENV === "production") {
     },
   });
 } else {
-  // Development → Gmail
+  // Development → Gmail (ensure you use an App Password or OAuth2)
   transporter = nodemailer.createTransport({
     service: "gmail",
     auth: {
@@ -69,7 +70,38 @@ if (process.env.NODE_ENV === "production") {
     },
   });
 }
-// ------------------ COURSES ------------------
+
+// Verify transporter (useful debug log at startup)
+transporter
+  .verify()
+  .then(() => console.log("✅ Mail transporter is ready"))
+  .catch((err) => console.warn("⚠️ Mail transporter verification failed:", err));
+
+// Helper: sendMail
+async function sendMail(to, subject, html) {
+  try {
+    if (!transporter) throw new Error("Mail transporter is not configured");
+
+    const from = process.env.EMAIL_FROM || process.env.EMAIL_USER || '"Deep Learner Academy" <deeplearneracademy@gmail.com>';
+
+    const mailOptions = {
+      from,
+      to,
+      subject,
+      html,
+    };
+
+    const info = await transporter.sendMail(mailOptions);
+    console.log("✉️  Email sent:", info && (info.messageId || info.id || info));
+    return info;
+  } catch (err) {
+    console.error("❌ sendMail error:", err);
+    // Rethrow so calling code can decide what to do (your current routes await sendMail)
+    throw err;
+  }
+}
+
+// ------------------ COURSES ----------------
 app.get("/api/courses", async (req, res) => {
   try {
     const [results] = await db.query("SELECT * FROM courses");
@@ -176,14 +208,14 @@ app.post("/api/login", async (req, res) => {
     if (!rows.length) return res.status(400).json({ message: "Invalid email or password" });
 
     const user = rows[0];
-    
+
     // Generate 6-digit OTP
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000); // 10 mins
-    
+
     // Save OTP to DB
     await db.query("INSERT INTO user_otps (email, otp, expires_at) VALUES (?, ?, ?)", [email, otp, expiresAt]);
-    
+
     // Send OTP email
     await sendMail(email, "Your OTP Code", `<h2>Your OTP is ${otp}</h2>`);
 
